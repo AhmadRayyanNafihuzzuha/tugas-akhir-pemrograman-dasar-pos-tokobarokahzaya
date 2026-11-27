@@ -2,6 +2,14 @@ package barokahzaya;
 import java.util.ArrayList;
 import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 public class FormKasirUtama extends javax.swing.JFrame {
     
     private static final java.util.logging.Logger logger = java.util.logging.Logger.getLogger(FormKasirUtama.class.getName());
@@ -24,13 +32,15 @@ public class FormKasirUtama extends javax.swing.JFrame {
     
     // 1. Memuat data sembako awal & tampilkan ke JTable
     private void muatDataBarangAwal() {
+        if (!muatDataBarangDariFile()) {
         daftarBarang.add(new Barang("B01", "Beras Ramos 5kg", 65000, 72000, 20));
         daftarBarang.add(new Barang("M02", "Minyak Goreng 1L", 15500, 18000, 15));
         daftarBarang.add(new Barang("G03", "Gula Pasir 1kg", 15000, 17500, 12));
         daftarBarang.add(new Barang("T04", "Telur Ayam 1kg", 25000, 28000, 5));
         daftarBarang.add(new Barang("I05", "Mi Instan Goreng", 2700, 3500, 40));
         daftarBarang.add(new Barang("K06", "Kopi Kapal Api 165g", 13000, 15500, 8));
-
+        simpanDataBarangKeFile();
+    }
         String[] kolom = {"Kode", "Nama Barang", "Stok", "Harga Jual"};
         tableModel = new DefaultTableModel(kolom, 0) {
             @Override
@@ -168,6 +178,7 @@ public class FormKasirUtama extends javax.swing.JFrame {
             }
         }
         txtTambahStok.setText("");
+        simpanDataBarangKeFile();
         filterTabelBarang(txtCariBarang.getText());
     }
 
@@ -226,6 +237,8 @@ public class FormKasirUtama extends javax.swing.JFrame {
         double diskon = hitungDiskon(totalKotor);
         double totalBayar = totalKotor - diskon;
         double keuntunganBersih = totalKeuntunganKotor - diskon;
+        simpanDataBarangKeFile(); // <-- Simpan perubahan stok terbaru
+        simpanRiwayatTransaksi(totalKotor, diskon, totalBayar, keuntunganBersih); // <-- Catat transaksi
 
         // Simpan hasil ke variabel untuk ditampilkan
         ringkasanTerakhir = "=== STRUK & RINGKASAN TRANSAKSI BAROKAH ZAYA ===\n"
@@ -243,6 +256,9 @@ public class FormKasirUtama extends javax.swing.JFrame {
         areaKeranjang.setText("");
         JOptionPane.showMessageDialog(this, "Transaksi berhasil diproses! Klik 'Tampilkan Hasil' untuk melihat struk.");
     }
+    
+    private final String FILE_BARANG = "data_barang.csv";
+    private final String FILE_TRANSAKSI = "riwayat_transaksi.csv";
 
     // 10. Tampilkan Hasil ke JTextArea
     private void tampilkanHasil() {
@@ -270,8 +286,69 @@ public class FormKasirUtama extends javax.swing.JFrame {
         tblBarang.clearSelection();
         filterTabelBarang("");
     }
+    
+    // A. Menyimpan seluruh isi ArrayList daftarBarang ke file CSV (Overwrite)
+    private void simpanDataBarangKeFile() {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_BARANG))) {
+            for (Barang b : daftarBarang) {
+                String baris = b.getKodeBarang() + ";"
+                        + b.getNamaBarang() + ";"
+                        + b.getHargaBeli() + ";"
+                        + b.getHargaJual() + ";"
+                        + b.getStok();
+                writer.write(baris);
+                writer.newLine();
+            }
+        } catch(IOException e) {
+            JOptionPane.showMessageDialog(this, "Gagal menyimpan data barang: " 
+                    + e.getMessage(), "Error File", JOptionPane.ERROR_MESSAGE);
+        }
+    }
 
+    // B. Membaca data dari file CSV saat aplikasi pertama kali dibuka
+    private boolean muatDataBarangDariFile() {
+        File file = new File(FILE_BARANG);
+        if (!file.exists()) {
+            return false; // File belum ada (aplikasi baru pertama kali dijalankan)
+        }
+        
+        daftarBarang.clear();
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String baris;
+            while ((baris = reader.readLine()) != null) {
+                if (baris.trim().isEmpty()) continue;
+                String[] data = baris.split(";");
+                if (data.length == 5) {
+                    String kode = data[0];
+                    String nama = data[1];
+                    double beli = Double.parseDouble(data[2]);
+                    double jual = Double.parseDouble(data[3]);
+                    int stok = Integer.parseInt(data[4]);
+                    daftarBarang.add(new Barang(kode, nama, beli, jual, stok));
+                }
+            }
+            return true;
+        } catch (IOException | NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Gagal membaca file database lokal: "
+                    + e.getMessage(), "Error File", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+    }
 
+    // C. Mencatat riwayat transaksi & keuntungan ke file CSV (Append / Tambah baris baru)
+    private void simpanRiwayatTransaksi(double totalKotor, double diskon, double totalBayar, double untungBersih) {
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        String waktu = LocalDateTime.now().format(dtf);
+        
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(FILE_TRANSAKSI, true))) {
+            String baris = waktu + ";" + totalKotor + ";" + diskon + ";" + totalBayar + ";" + untungBersih;
+            writer.write(baris);
+            writer.newLine();
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Gagal mencatat riwayat transaksi: " 
+                    + e.getMessage(), "Error File", JOptionPane.ERROR_MESSAGE);
+        }
+    }
     /**
      * This method is called from within the constructor to initialize the form.
      * WARNING: Do NOT modify this code. The content of this method is always
@@ -502,7 +579,7 @@ public class FormKasirUtama extends javax.swing.JFrame {
                         .addGap(18, 18, 18)
                         .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                     .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE))
-                .addGap(18, 18, 18)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
                     .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, 231, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addGroup(layout.createSequentialGroup()
@@ -511,7 +588,7 @@ public class FormKasirUtama extends javax.swing.JFrame {
                         .addComponent(btnTampilkanHasil, javax.swing.GroupLayout.PREFERRED_SIZE, 66, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addGap(18, 18, 18)
                         .addComponent(btnReset, javax.swing.GroupLayout.PREFERRED_SIZE, 66, javax.swing.GroupLayout.PREFERRED_SIZE)))
-                .addContainerGap(84, Short.MAX_VALUE))
+                .addContainerGap(20, Short.MAX_VALUE))
         );
 
         pack();
